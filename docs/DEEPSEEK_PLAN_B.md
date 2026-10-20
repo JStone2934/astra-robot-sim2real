@@ -40,13 +40,15 @@ as the Codex path:
 | Artifact | Contents |
 |---|---|
 | `dsh-config-audit.json` | binary/version, model, provider, effort, overlay, curated environment, network caveat |
-| `agent-result.json` | `runner`, `status`, `exit_code`, `session_id`, `model`, `resolved_model`, `reasoning`, `requested_reasoning`, tool counts, timing |
+| `agent-result.json` | `runner`, `status`, `exit_code`, `session_id`, `model`, `resolved_model`, `reasoning`, `requested_reasoning`, tool counts, token `usage`, timing |
 | `agent-events.jsonl` | every NDJSON event with a receive timestamp |
 | `agent-timing.jsonl` | session start/end |
 | `agent-final.txt` | final answer text |
 
-The overlay selects the model and disables interactive approval while keeping the
-`workspace-write` sandbox:
+The overlay selects the provider, model, and reasoning level. It deliberately leaves
+the approval policy alone: the shipped `workspace-write` preset bundles sandbox and
+approval together, and patching only the approval value makes the permission service
+fail to activate (`composed sandbox and approval defaults match no preset`).
 
 ```yaml
 - id: agent-default-model
@@ -54,9 +56,6 @@ The overlay selects the model and disables interactive approval while keeping th
     provider: deepseek-official
     model: deepseek-flash
     reasoningEffort: max
-- id: approval
-  config:
-    policy: never
 ```
 
 ## Verification
@@ -111,6 +110,9 @@ and `--no-video` on hosts without Playwright Chromium.
   running unconfined.
 - **Version.** The local DSH is `0.2.0-rc.2`; DeepSeek recommends `0.2.1-rc.1+`
   for V4.1-Flash-1017. Upgrade before collecting a formal block.
+- **Approvals in headless mode.** The session keeps the default `workspace-write`
+  preset (`approval: ask`). Commands inside the workspace need no approval, but an
+  explicit escalation request cannot be answered by a headless run and fails closed.
 - **Workflow page.** Only session start/end are projected into
   `agent-workflow.jsonl`; the operator page will not show a full tool-call feed.
 - **Session storage.** DSH persists sessions under the per-trial `dsh-home`;

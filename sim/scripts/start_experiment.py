@@ -1,5 +1,6 @@
 """Fresh native Codex attempt, private live camera, full replay export."""
 import argparse
+import os
 import json
 from pathlib import Path
 import socket
@@ -36,7 +37,8 @@ def start(name, *, prepare_only=False, max_seconds=3600., reasoning='xhigh', ski
         subprocess.run(git+['add','skill'],check=True)
         subprocess.run(git+['commit','-qm','Import audited generic skill only'],check=True)
     configuration={'run':name,'max_seconds':max_seconds,'max_requests':None,'reasoning':reasoning,
-                   'runner':'native-codex-app-server','context_management':'Codex native defaults',
+                   'runner':('deepseek-harness-headless' if os.environ.get('ASTRA_RUNNER')=='dsh'
+                              else 'native-codex-app-server'),'context_management':'Codex native defaults',
                    'image_history_limit':None,'monitor_fps':monitor_fps,'export_video':not no_video,
                    'operator_workflow':True,
                    'automatic_dashboard_video':record_dashboard,

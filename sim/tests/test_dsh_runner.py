@@ -16,6 +16,7 @@ def test_event_log_projects_stream():
         '{"type":"status","phase":"turn_start","turn":1}',
         '{"type":"tool_call","name":"bash"}',
         '{"type":"tool_result","name":"bash"}',
+        '{"type":"status","phase":"step_end","usage":{"inputTokens":100,"outputTokens":5}}',
         '{"type":"status","phase":"turn_end","reason":{"kind":"completed"}}',
         '{"type":"final","text":"answer"}',
     ]
@@ -26,6 +27,7 @@ def test_event_log_projects_stream():
     assert log.final_text == 'answer'
     assert log.status == 'completed'
     assert log.error is None
+    assert log.usage == {'inputTokens': 100, 'outputTokens': 5}
 
 
 def test_event_log_marks_errors_and_malformed_lines():
@@ -44,7 +46,7 @@ def test_overlay_and_command(tmp_path):
                             model='deepseek-flash', reasoning='max')
     text = overlay.read_text()
     assert 'model: deepseek-flash' in text and 'reasoningEffort: max' in text
-    assert 'policy: never' in text
+    assert 'id: approval' not in text
     command = build_command('/usr/bin/dsh', 'headless', overlay)
     assert command == ['/usr/bin/dsh', '--profile', 'headless', '--patch', str(overlay), '--json', '-']
 
@@ -69,6 +71,7 @@ def test_run_agent_completes_and_writes_artifacts(tmp_path):
     dsh = fake_dsh(tmp_path/'dsh', "print(json.dumps({'type':'session','sessionId':'s1'}), flush=True)\n"
                                    "print(json.dumps({'type':'tool_call','name':'bash'}), flush=True)\n"
                                    "print(json.dumps({'type':'tool_result','name':'bash'}), flush=True)\n"
+                                   "print(json.dumps({'type':'status','phase':'step_end','usage':{'inputTokens':100,'outputTokens':5}}), flush=True)\n"
                                    "print(json.dumps({'type':'status','phase':'turn_end','reason':{'kind':'completed'}}), flush=True)\n"
                                    "print(json.dumps({'type':'final','text':'done'}), flush=True)\n")
     result = run_agent(workspace, '/tmp/astra-test-missing.sock', private,
@@ -79,7 +82,8 @@ def test_run_agent_completes_and_writes_artifacts(tmp_path):
     assert result['reasoning'] == 'max'
     assert result['requested_reasoning'] == 'xhigh'
     assert (private/'agent-final.txt').read_text() == 'done\n'
-    assert len((private/'agent-events.jsonl').read_text().splitlines()) == 5
+    assert len((private/'agent-events.jsonl').read_text().splitlines()) == 6
+    assert result['usage'] == {'inputTokens': 100, 'outputTokens': 5}
     assert len((private/'agent-timing.jsonl').read_text().splitlines()) == 2
     assert json.loads((private/'agent-result.json').read_text())['status'] == 'completed'
     audit = json.loads((private/'dsh-config-audit.json').read_text())

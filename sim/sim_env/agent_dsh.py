@@ -29,14 +29,16 @@ DEFAULT_PROVIDER = 'deepseek-official'
 
 
 def write_overlay(path, *, provider, model, reasoning):
-    """Write a profile patch that selects the model and disables interactive approval."""
+    """Write a profile patch that selects the provider, model, and reasoning level.
+
+    The approval policy is left at the composition default: the shipped
+    ``workspace-write`` preset bundles it with the sandbox, and an unmatched
+    sandbox/approval pair makes the permission service fail to activate.
+    """
     lines = ['- id: agent-default-model', '  config:',
              f'    provider: {provider}', f'    model: {model}']
     if reasoning:
         lines.append(f'    reasoningEffort: {reasoning}')
-    # Keep the workspace-write sandbox but never wait for an interactive approval
-    # that a headless run cannot answer.
-    lines += ['- id: approval', '  config:', '    policy: never']
     Path(path).write_text('\n'.join(lines)+'\n')
     return Path(path)
 
@@ -61,6 +63,7 @@ class EventLog:
         self.tool_results = 0
         self.malformed = 0
         self.events = 0
+        self.usage = {}
 
     def consume(self, line):
         line = line.strip()
@@ -83,6 +86,10 @@ class EventLog:
         elif kind == 'tool_result':
             self.tool_results += 1
         elif kind == 'status':
+            if event.get('phase') == 'step_end' and isinstance(event.get('usage'), dict):
+                for key, value in event['usage'].items():
+                    if isinstance(value, (int, float)) and not isinstance(value, bool):
+                        self.usage[key] = self.usage.get(key, 0)+value
             if event.get('phase') == 'turn_end':
                 self.turn_reason = event.get('reason')
                 reason = self.turn_reason or {}
@@ -229,6 +236,7 @@ def run_agent(workspace, socket_path, private_dir, *, model=None, reasoning='xhi
         'status': status,
         'exit_code': exit_code, 'session_id': log.session_id,
         'events': log.events, 'malformed_events': log.malformed,
+        'usage': log.usage or None,
         'tool_calls': log.tool_calls, 'tool_results': log.tool_results,
         'turn_reason': log.turn_reason, 'error': log.error,
         'elapsed_wall_s': round(ended-started, 3), 'end_unix': time.time(),

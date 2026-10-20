@@ -1,5 +1,6 @@
 """Stage-only launcher; all legacy launchers remain unchanged."""
 import argparse
+import os
 import json
 from pathlib import Path
 import socket
@@ -33,7 +34,8 @@ def start(name, *, prepare_only=False, max_seconds=1800., reasoning='xhigh', inp
     private=run/'private';private.mkdir()
     write_json(private/'prior-input-audit.json', {'sha256': input_sha256, 'source': str(input_dir)})
     configuration={'run':name,'max_seconds':max_seconds,'max_requests':None,'reasoning':reasoning,
-                   'runner':'native-codex-app-server','context_management':'Codex native defaults',
+                   'runner':('deepseek-harness-headless' if os.environ.get('ASTRA_RUNNER')=='dsh'
+                              else 'native-codex-app-server'),'context_management':'Codex native defaults',
                    'image_history_limit':None,'monitor_fps':monitor_fps,'export_video':not no_video,
                    'operator_workflow':True,
                    'automatic_dashboard_video':record_dashboard,
