@@ -20,6 +20,7 @@ from run_iterations import command_for, git, read_json, write_json
 from sim_env.transfer import audit
 from sim_env.setup import load_setup
 from sim_env.agent import DEFAULT_CODEX
+from sim_env.expectations import expected_effort, expected_model
 
 NAME = 'skill-v4-v5-repeat-001'
 STUDY = ROOT/'reports/studies'/NAME
@@ -233,7 +234,7 @@ def summarize(run, variant):
     if imported != variant['sha256']:
         raise RuntimeError('Initial import commit differs from frozen input')
     launch = read_json(private/'launch.json')
-    if (agent.get('resolved_model'), agent.get('reasoning'), launch.get('max_seconds')) != ('gpt-6-astra', 'xhigh', 1800):
+    if (agent.get('resolved_model'), agent.get('reasoning'), launch.get('max_seconds')) != (expected_model(), expected_effort(), 1800):
         raise RuntimeError('Model/effort/budget changed')
     for name in ('dashboard.mp4', 'follow.mp4', 'follow-compact.mp4'):
         if not (private/name).is_file() or not (private/name).stat().st_size:

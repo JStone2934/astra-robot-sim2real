@@ -1,4 +1,5 @@
 """Fresh native Codex session: Codex owns tools, images and compaction."""
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -8,6 +9,8 @@ import subprocess
 import threading
 import time
 import tomllib
+
+from .model_catalog import catalog_declares, effective_reasoning
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CODEX = '/usr/lib/chatgpt/resources/codex'
@@ -30,7 +33,7 @@ def prepare_native(workspace, socket_path, private_dir, *, provider=None, reason
     host = tomllib.loads(source_config.read_text()) if source_config.exists() else {}
     config = {k: host[k] for k in ('model', 'model_provider', 'model_providers') if k in host}
     config.setdefault('model', 'gpt-6-astra')
-    config.update(model_reasoning_effort=reasoning, approval_policy='never',
+    config.update(approval_policy='never',
                   default_permissions='subject', web_search='disabled', project_doc_max_bytes=0)
     # Native image/compaction features and token thresholds retain their defaults.
     config['features'] = {k: False for k in (
@@ -62,6 +65,18 @@ def prepare_native(workspace, socket_path, private_dir, *, provider=None, reason
             key = details.get('env_key')
             if key and key in os.environ:
                 env[key] = os.environ[key]
+    # DeepSeek needs its model catalog (image input, 1M context, shell tool type).
+    # Copy it into the private home so Codex reads the same declarations as the
+    # host setup while no other host history is imported.
+    explicit_catalog = os.environ.get('ASTRA_MODELS_JSON')
+    catalog_source = Path(explicit_catalog) if explicit_catalog else source_home/'models.json'
+    if explicit_catalog and not catalog_source.is_file():
+        raise FileNotFoundError('ASTRA_MODELS_JSON not found: '+str(catalog_source))
+    if (explicit_catalog or str(config['model']).lower().startswith('deepseek')) and catalog_source.is_file():
+        shutil.copyfile(catalog_source, home/'models.json')
+        (home/'models.json').chmod(0o600)
+    # The frozen study names xhigh; DeepSeek accepts low/high/max only.
+    config['model_reasoning_effort'] = effective_reasoning(config['model'], reasoning)
     tmp = workspace/'tmp'
     tmp.mkdir(exist_ok=True)
     shell_env = {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8', 'HOME': str(workspace),
@@ -87,8 +102,19 @@ def run_agent(workspace, socket_path, private_dir, *, provider=None, reasoning='
                                        provider=provider, reasoning=reasoning)
     binary = os.environ.get('ASTRA_CODEX_BIN', DEFAULT_CODEX)
     version = subprocess.check_output([binary, '--version'], text=True, stderr=subprocess.DEVNULL).strip()
+    effective = config['model_reasoning_effort']
+    provider_name = config.get('model_provider')
+    provider_config = (config.get('model_providers') or {}).get(provider_name) or {}
+    catalog = home/'models.json'
     result = {'runner': 'native-codex-app-server', 'codex_version': version,
-              'model': config['model'], 'reasoning': reasoning,
+              'model': config['model'], 'model_provider': provider_name,
+              'provider_base_url': provider_config.get('base_url'),
+              'reasoning': effective, 'requested_reasoning': reasoning,
+              'model_catalog': str(catalog) if catalog.is_file() else None,
+              'model_catalog_sha256': (hashlib.sha256(catalog.read_bytes()).hexdigest()
+                                       if catalog.is_file() else None),
+              'model_catalog_declares_model': (catalog_declares(catalog, config['model'])
+                                               if catalog.is_file() else None),
               'context_management': 'Codex native defaults', 'image_history_limit': None,
               'request_limit': None, 'status': 'starting', 'start_unix': time.time()}
     (private_dir/'native-config-audit.json').write_text(json.dumps({
@@ -159,7 +185,7 @@ def run_agent(workspace, socket_path, private_dir, *, provider=None, reasoning='
             result['resolved_model'] = thread['model']
             if thread['model'] != config['model']:
                 raise RuntimeError('native Codex resolved a different model')
-            turn = request('turn/start', {'threadId': result['thread_id'], 'effort': reasoning,
+            turn = request('turn/start', {'threadId': result['thread_id'], 'effort': effective,
                 'input': [{'type': 'text', 'text': prompt if prompt is not None else
                            (workspace/'PROMPT.md').read_text(), 'text_elements': []}]})
             turn_id = turn['turn']['id']

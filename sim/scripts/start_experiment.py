@@ -125,7 +125,7 @@ if __name__=='__main__':
     p.add_argument('name')
     p.add_argument('--prepare-only',action='store_true')
     p.add_argument('--max-seconds',type=float,default=3600.)
-    p.add_argument('--reasoning',choices=['medium','high','xhigh'],default='xhigh')
+    p.add_argument('--reasoning',choices=['low','medium','high','xhigh','max'],default='xhigh')
     p.add_argument('--skill',help='operator-selected cleaned skill directory only; never copy a prior workspace')
     p.add_argument('--setup',help='private starting-pose JSON; omitted means the original nearby pilot pose')
     p.add_argument('--monitor-port',type=int,default=0,help='loopback only; 0 selects a free port')

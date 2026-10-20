@@ -18,6 +18,7 @@ from prior_materials import GROUPS, common_files, export_robot, initial_target, 
 from sim_env.core import Core
 from sim_env.setup import load_setup
 from sim_env.agent import DEFAULT_CODEX
+from sim_env.expectations import expected_effort, expected_model
 from account_preflight import preflight
 from run_skill_comparison import measure
 
@@ -166,7 +167,7 @@ def summarize(run, variant):
     if agent.get('status') not in ('completed', 'environment_ended') or agent.get('exit_code') != 0:
         raise RuntimeError('Model/runtime failure: '+run.name)
     if (agent.get('resolved_model'), agent.get('reasoning'), launch.get('task_budget_seconds'),
-        launch.get('agent_session_budget_seconds')) != ('gpt-6-astra', 'xhigh', 1800., 1980.):
+        launch.get('agent_session_budget_seconds')) != (expected_model(), expected_effort(), 1800., 1980.):
         raise RuntimeError('Actual model/effort/budget changed')
     if result.get('subject_outcome') == 'contamination' or result.get('fault') in (
             'realtime_overrun', 'recording_failure', 'operator_camera_failure', 'camera_failure', 'service_exception'):

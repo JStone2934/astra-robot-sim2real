@@ -3,6 +3,8 @@ import json,os,sys,time,subprocess,fcntl,hashlib
 from pathlib import Path
 from start_local_feedback_trial import ROOT,OUT,validate,hashes,start,preflight
 from run_skill_comparison import measure
+sys.path.insert(0,str(ROOT))
+from sim_env.expectations import expected_effort, expected_model
 BATCH=ROOT/'reports/batches/local-feedback-001'
 def read(p):return json.loads(p.read_text())
 def write(p,x):
@@ -11,7 +13,7 @@ def digest(p):return hashlib.sha256(p.read_bytes()).hexdigest()
 def summarize(t):
  run=ROOT/'experiments'/t['run'];p=run/'private';r=read(p/'simulation/result.json');a=read(p/'agent-result.json');l=read(p/'launch.json')
  assert a.get('status') in ('completed','environment_ended') and a.get('exit_code')==0,'Agent infrastructure failure'
- assert (a.get('resolved_model'),a.get('reasoning'),l['task_budget_seconds'],l['agent_session_budget_seconds'])==('gpt-6-astra','xhigh',300,480)
+ assert (a.get('resolved_model'),a.get('reasoning'),l['task_budget_seconds'],l['agent_session_budget_seconds'])==(expected_model(),expected_effort(),300,480)
  assert r.get('subject_outcome')!='contamination' and r.get('fault') not in ('realtime_overrun','recording_failure','operator_camera_failure','camera_failure','service_exception')
  assert not r.get('recording_error') and not (r.get('operator_monitor') or {}).get('error')
  expected=hashes(OUT/'inputs'/t['condition'])

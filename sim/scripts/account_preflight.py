@@ -1,4 +1,5 @@
 """Read the launcher's account, quota and model catalog; no thread or model turn."""
+import argparse
 import hashlib
 import json
 import os
@@ -9,15 +10,74 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.error
+import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from sim_env.agent import DEFAULT_CODEX, prepare_native
+from sim_env.model_catalog import catalog_declares, effective_reasoning
 
 
-def preflight(expected_model='gpt-6-astra', expected_effort='xhigh'):
+def provider_preflight(expected_model, expected_effort, *, inference=True):
+    """Validate a Responses-provider block without touching the ChatGPT account.
+
+    Checks the credential, the DeepSeek model catalog, and (optionally) one
+    minimal inference call.  The API key is never written to disk or output.
+    """
+    base = os.environ['ASTRA_BASE_URL'].rstrip('/')
+    token = os.environ.get('ASTRA_API_KEY')
+    model = os.environ.get('ASTRA_MODEL')
+    if not token or not model:
+        raise RuntimeError('ASTRA_BASE_URL requires ASTRA_API_KEY and ASTRA_MODEL')
+    if expected_model and model != expected_model:
+        raise RuntimeError(f'Configured model {model!r} differs from expected {expected_model!r}')
+    requested_effort = expected_effort or os.environ.get('ASTRA_EXPECTED_EFFORT', 'xhigh')
+    effort = effective_reasoning(model, requested_effort)
+    source_home = Path(os.environ.get('CODEX_HOME', str(Path.home()/'.codex')))
+    catalog_path = Path(os.environ.get('ASTRA_MODELS_JSON') or source_home/'models.json')
+    catalog = {'path': str(catalog_path), 'present': catalog_path.is_file(),
+               'declares_model': catalog_declares(catalog_path, model)}
+    if not catalog['present']:
+        raise RuntimeError('Model catalog missing; set ASTRA_MODELS_JSON to sim/scripts/deepseek-models.json')
+    if not catalog['declares_model']:
+        raise RuntimeError(f'Model catalog does not declare {model!r}')
+    version = None
+    try:
+        version = subprocess.check_output([os.environ.get('ASTRA_CODEX_BIN', DEFAULT_CODEX), '--version'],
+                                          text=True, stderr=subprocess.DEVNULL).strip()
+    except (OSError, subprocess.CalledProcessError):
+        version = None
+    result = {'checked_unix': time.time(), 'mode': 'provider', 'endpoint': base, 'model': model,
+              'tested_model': model, 'effort': effort, 'requested_effort': requested_effort,
+              'catalog': catalog, 'codex_version': version, 'model_turns_started': 0}
+    if not inference:
+        result['inference'] = 'skipped'
+        return result
+    payload = {'model': model, 'input': 'Reply with OK.', 'max_output_tokens': 16,
+               'reasoning': {'effort': effort}, 'stream': False}
+    request = urllib.request.Request(base+'/responses', data=json.dumps(payload).encode(),
+        headers={'Content-Type': 'application/json', 'Authorization': 'Bearer '+token}, method='POST')
+    started = time.monotonic()
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            body = json.loads(response.read())
+    except urllib.error.HTTPError as exc:
+        detail = exc.read()[:400].decode('utf-8', 'replace')
+        raise RuntimeError(f'Provider HTTP {exc.code}: {detail}') from None
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f'Provider transport unavailable: {exc.reason}') from None
+    result.update({'inference': 'ok', 'latency_seconds': round(time.monotonic()-started, 3),
+                   'output_text': (body.get('output_text') or '')[:80],
+                   'usage': body.get('usage'), 'model_turns_started': 1})
+    return result
+
+
+def preflight(expected_model=None, expected_effort=None, *, inference=True):
+    expected_model = expected_model or os.environ.get('ASTRA_EXPECTED_MODEL', 'gpt-6-astra')
+    expected_effort = expected_effort or os.environ.get('ASTRA_EXPECTED_EFFORT', 'xhigh')
     if os.environ.get('ASTRA_BASE_URL'):
-        raise RuntimeError('This frozen batch requires the ChatGPT account, not a provider override')
+        return provider_preflight(expected_model, expected_effort, inference=inference)
     with tempfile.TemporaryDirectory(prefix='astra-account-preflight-') as folder:
         folder = Path(folder)
         workspace = folder/'workspace'; workspace.mkdir()
@@ -111,4 +171,11 @@ def preflight(expected_model='gpt-6-astra', expected_effort='xhigh'):
 
 
 if __name__ == '__main__':
-    print(json.dumps(preflight(), ensure_ascii=False, indent=2))
+    parser = argparse.ArgumentParser(description='Check the model account/provider before a trial block.')
+    parser.add_argument('--model', help='expected model id (default: ASTRA_EXPECTED_MODEL or gpt-6-astra)')
+    parser.add_argument('--effort', help='expected effort (default: ASTRA_EXPECTED_EFFORT or xhigh)')
+    parser.add_argument('--no-inference', action='store_true',
+                        help='validate credentials/catalog only; do not call the model')
+    args = parser.parse_args()
+    print(json.dumps(preflight(args.model, args.effort, inference=not args.no_inference),
+                     ensure_ascii=False, indent=2))

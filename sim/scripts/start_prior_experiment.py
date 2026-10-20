@@ -123,7 +123,7 @@ if __name__=='__main__':
     p.add_argument('name')
     p.add_argument('--prepare-only',action='store_true')
     p.add_argument('--max-seconds',type=float,default=1800.)
-    p.add_argument('--reasoning',choices=['medium','high','xhigh'],default='xhigh')
+    p.add_argument('--reasoning',choices=['low','medium','high','xhigh','max'],default='xhigh')
     p.add_argument('--input-dir',required=True)
     p.add_argument('--reference',required=True)
     p.add_argument('--setup',help='private starting-pose JSON; omitted means the original nearby pilot pose')
