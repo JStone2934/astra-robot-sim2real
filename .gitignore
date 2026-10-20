@@ -11,3 +11,9 @@ paper/*.log
 paper/*.out
 paper/*.blg
 paper/*.xdv
+
+# Local conda environment, caches, and optional Playwright browser runtime
+.conda/
+.cache/
+.tmp/
+.browser-runtime/
