@@ -82,6 +82,13 @@ def prepare_native(workspace, socket_path, private_dir, *, provider=None, reason
 
 def run_agent(workspace, socket_path, private_dir, *, provider=None, reasoning='xhigh',
               max_seconds=3600., prompt=None):
+    if os.environ.get('ASTRA_RUNNER', 'codex') == 'dsh':
+        if provider is not None:
+            raise ValueError('provider overrides belong to the Codex runner; use DSH_MODEL/DSH_PROVIDER')
+        from .agent_dsh import run_agent as run_dsh
+        return run_dsh(workspace, socket_path, private_dir,
+                       model=os.environ.get('ASTRA_MODEL'), reasoning=reasoning,
+                       max_seconds=max_seconds, prompt=prompt)
     workspace, private_dir = Path(workspace).resolve(), Path(private_dir).resolve()
     home, config, env = prepare_native(workspace, socket_path, private_dir,
                                        provider=provider, reasoning=reasoning)
